@@ -1,5 +1,6 @@
 import Foundation
 import Network
+import SwiftUI
 import UIKit
 
 /// 把 Apple Pencil 的坐标和压力按行文本发到电脑端（TCP）。
