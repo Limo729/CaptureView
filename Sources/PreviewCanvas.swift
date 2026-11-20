@@ -6,6 +6,9 @@ struct PreviewCanvas: UIViewRepresentable {
     let session: AVCaptureSession
     let mode: DisplayMode
     let rotation: Double
+    let mirrorH: Bool
+    let mirrorV: Bool
+    let allowGestures: Bool
     @ObservedObject var viewport: Viewport
 
     func makeCoordinator() -> Coordinator {
@@ -28,9 +31,12 @@ struct PreviewCanvas: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: PreviewCanvasView, context: Context) {
+        uiView.setGesturesEnabled(allowGestures)
         uiView.apply(
             mode: mode,
             rotation: rotation,
+            mirrorH: mirrorH,
+            mirrorV: mirrorV,
             zoom: viewport.zoom,
             pan: viewport.pan,
             resetToken: viewport.resetToken
@@ -49,11 +55,16 @@ final class PreviewCanvasView: UIView {
     private var zoom: CGFloat = 1
     private var pan: CGSize = .zero
     private var rotation: CGFloat = 0
+    private var mirrorH = false
+    private var mirrorV = false
     private var mode: DisplayMode = .stretch
     private var lastToken = 0
 
     private var startZoom: CGFloat = 1
     private var startPan: CGSize = .zero
+
+    private var pinchRecognizer: UIPinchGestureRecognizer?
+    private var panRecognizer: UIPanGestureRecognizer?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -85,6 +96,14 @@ final class PreviewCanvasView: UIView {
         pan.maximumNumberOfTouches = 2
         addGestureRecognizer(pinch)
         addGestureRecognizer(pan)
+        pinchRecognizer = pinch
+        panRecognizer = pan
+    }
+
+    /// 设置里可以关掉双指手势，避免误触；关掉时点击/滑动不会被吃掉
+    func setGesturesEnabled(_ enabled: Bool) {
+        pinchRecognizer?.isEnabled = enabled
+        panRecognizer?.isEnabled = enabled
     }
 
     @objc private func handlePinch(_ gesture: UIPinchGestureRecognizer) {
@@ -127,6 +146,7 @@ final class PreviewCanvasView: UIView {
     }
 
     func apply(mode newMode: DisplayMode, rotation degrees: Double,
+               mirrorH newMirrorH: Bool, mirrorV newMirrorV: Bool,
                zoom newZoom: CGFloat, pan newPan: CGSize, resetToken: Int) {
 
         if resetToken != lastToken {
@@ -144,6 +164,8 @@ final class PreviewCanvasView: UIView {
         }
         let radians = CGFloat(degrees * Double.pi / 180)
         if abs(rotation - radians) > 0.001 { rotation = radians }
+        if mirrorH != newMirrorH { mirrorH = newMirrorH }
+        if mirrorV != newMirrorV { mirrorV = newMirrorV }
 
         applyTransform()
     }
@@ -152,6 +174,10 @@ final class PreviewCanvasView: UIView {
         var t = CGAffineTransform(translationX: pan.width, y: pan.height)
         t = t.scaledBy(x: zoom, y: zoom)
         t = t.rotated(by: rotation)
+        // 镜像先作用在画面坐标系里，再叠加平移/缩放/旋转，
+        // 这样拖动手感和未镜像时一致
+        let mirror = CGAffineTransform(scaleX: mirrorH ? -1 : 1, y: mirrorV ? -1 : 1)
+        t = mirror.concatenating(t)
 
         CATransaction.begin()
         CATransaction.setDisableActions(true)

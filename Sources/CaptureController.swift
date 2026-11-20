@@ -295,16 +295,24 @@ final class CaptureController: NSObject, ObservableObject {
 
     // MARK: - 工具
 
+    /// 用四字符码的字符串形式判断编码，避免 CoreVideo 常量与 FourCharCode 的整型不一致
     private func codecName(_ sub: FourCharCode) -> String {
-        if sub == kCMVideoCodecType_JPEG { return "MJPEG" }
-        if sub == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange ||
-           sub == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange { return "NV12" }
-        if sub == kCVPixelFormatType_32BGRA { return "BGRA" }
-        if sub == kCVPixelFormatType_422YpCbCr8_yuvs { return "YUY2" }
         let bytes: [UInt8] = [
             UInt8((sub >> 24) & 0xFF), UInt8((sub >> 16) & 0xFF),
             UInt8((sub >> 8) & 0xFF), UInt8(sub & 0xFF)
         ]
-        return String(bytes: bytes, encoding: .ascii) ?? "?"
+        let raw = (String(bytes: bytes, encoding: .ascii) ?? "?").trimmingCharacters(in: .whitespaces)
+        switch raw {
+        case "jpeg", "JPEG", "mjpg", "MJPG":
+            return "MJPEG"
+        case "420v", "420f":
+            return "NV12"
+        case "BGRA":
+            return "BGRA"
+        case "yuvs", "YUY2", "yuys", "2vuy", "yuv2":
+            return "YUY2"
+        default:
+            return raw
+        }
     }
 }

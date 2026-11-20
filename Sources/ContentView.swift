@@ -8,10 +8,15 @@ struct ContentView: View {
 
     @State private var mode: DisplayMode = .stretch
     @State private var rotation: Double = 0
+    @State private var mirrorH = false
+    @State private var mirrorV = false
     @State private var showGuides = false
     @State private var showChrome = true
     @State private var showPanel = false
     @State private var sheetTab = 0
+
+    @AppStorage("allowGestures") private var allowGestures = true
+    @AppStorage("orientationLock") private var orientationLockRaw = OrientationLock.landscape.rawValue
 
     @Environment(\.scenePhase) private var scenePhase
 
@@ -22,6 +27,9 @@ struct ContentView: View {
             PreviewCanvas(session: capture.session,
                           mode: mode,
                           rotation: rotation,
+                          mirrorH: mirrorH,
+                          mirrorV: mirrorV,
+                          allowGestures: allowGestures,
                           viewport: viewport)
                 .ignoresSafeArea()
 
@@ -50,6 +58,9 @@ struct ContentView: View {
         }
         .onAppear {
             UIApplication.shared.isIdleTimerDisabled = true
+            // 启动即按设置里的方向锁定，默认横屏
+            let lock = OrientationLock(rawValue: orientationLockRaw) ?? .landscape
+            applyOrientationLock(lock)
             capture.start()
         }
         .onDisappear {
@@ -72,7 +83,7 @@ struct ContentView: View {
                 Spacer(minLength: 0)
             }
             Spacer(minLength: 0)
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 toolButton("slider.horizontal.3", "输入") {
                     sheetTab = 0
                     showPanel = true
@@ -81,11 +92,19 @@ struct ContentView: View {
                     sheetTab = 1
                     showPanel = true
                 }
+                toolButton("arrow.left.arrow.right", "左右镜像", active: mirrorH) {
+                    mirrorH.toggle()
+                }
+                toolButton("arrow.up.arrow.down", "上下镜像", active: mirrorV) {
+                    mirrorV.toggle()
+                }
                 toolButton("speedometer", "性能") {
                     sheetTab = 2
                     showPanel = true
                 }
                 toolButton("arrow.counterclockwise", "复位") {
+                    mirrorH = false
+                    mirrorV = false
                     viewport.reset()
                 }
             }
@@ -118,17 +137,23 @@ struct ContentView: View {
     }
 
     private func toolButton(_ icon: String, _ title: String,
+                            active: Bool = false,
                             action: @escaping () -> Void) -> some View {
         Button(action: action) {
             VStack(spacing: 3) {
                 Image(systemName: icon)
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(.system(size: 16, weight: .semibold))
                 Text(title)
                     .font(.system(size: 10, weight: .medium))
             }
-            .foregroundStyle(.white)
-            .frame(width: 62, height: 52)
+            .foregroundStyle(active ? Color.orange : Color.white)
+            .frame(width: 66, height: 52)
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(active ? Color.orange.opacity(0.85) : Color.white.opacity(0.08),
+                            lineWidth: active ? 1.2 : 0.8)
+            )
         }
         .buttonStyle(.plain)
     }

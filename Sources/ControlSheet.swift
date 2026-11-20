@@ -9,6 +9,9 @@ struct ControlSheet: View {
     @Binding var showGuides: Bool
     @Binding var tab: Int
 
+    @AppStorage("orientationLock") private var orientationLockRaw = OrientationLock.landscape.rawValue
+    @AppStorage("allowGestures") private var allowGestures = true
+
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -140,6 +143,21 @@ struct ControlSheet: View {
 
     private var displayTab: some View {
         List {
+            Section("屏幕方向") {
+                Picker("屏幕方向", selection: $orientationLockRaw) {
+                    ForEach(OrientationLock.allCases) { o in
+                        Text(o.title).tag(o.rawValue)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .onChange(of: orientationLockRaw) { _, newValue in
+                    applyOrientationLock(OrientationLock(rawValue: newValue) ?? .landscape)
+                }
+                Toggle("允许双指缩放与平移", isOn: $allowGestures)
+            } footer: {
+                Text("默认锁定横屏。关掉手势开关后，双指缩放和平移都不响应，画面不会被误触带动。")
+            }
+
             Section("显示方式") {
                 Picker("显示方式", selection: $mode) {
                     ForEach(DisplayMode.allCases) { m in
@@ -167,7 +185,7 @@ struct ControlSheet: View {
             }
 
             Section {
-                Button("按屏幕原分辨率铺满（2388 × 1668）") {
+                Button("按屏幕原分辨率铺满（横屏 2388 × 1668）") {
                     mode = .stretch
                     rotation = 0
                     viewport.reset()
