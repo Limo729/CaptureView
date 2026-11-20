@@ -223,45 +223,47 @@ final class PreviewCanvasView: UIView {
 
     // MARK: - 笔坐标换算
 
-    /// 窗口坐标 → 视频画面里的 0~1 坐标。
-    /// 路径：窗口点 → 本视图坐标 → canvasLayer 内容坐标（自动扣掉旋转/镜像/缩放/平移）
-    ///      → 按 videoGravity 扣掉留边 → 归一化。
-    /// 只要最终归一化到视频画面，电脑端就是 1:1 对应桌面像素，不需要再手工加偏移。
+    /// 窗口坐标 → 桌面上的 0~1 坐标。
+    ///
+    /// 前提（也是用户实机确认的基准）：当「旋转 270° + 上下镜像」把画面摆正、屏幕上看到的
+    /// 就是真实桌面时，屏幕位置和桌面位置是同一个比例关系。旋转和镜像只是把采集卡送来的
+    /// 翻转帧摆正，不影响「屏幕上这一点 = 桌面上这一点」这个结论，所以这里不参与计算。
+    /// 参与计算的只有双指缩放和平移：它们实打实改变了画面相对屏幕的位置。
     func normalizedVideoPoint(windowPoint: CGPoint) -> CGPoint {
-        // 万一还没排过版（图层尺寸是 0），先强制布局一次，避免除以 0 或算到空矩形
-        if canvasLayer.bounds.width < 1 || canvasLayer.bounds.height < 1 {
-            layoutIfNeeded()
-        }
         let local = convert(windowPoint, from: nil)
-        let inCanvas = canvasLayer.convert(local, from: layer)
-        let content = videoRect(in: CGRect(origin: .zero, size: canvasLayer.bounds.size))
-        guard content.width > 1, content.height > 1 else { return CGPoint(x: 0.5, y: 0.5) }
-        return CGPoint(x: (inCanvas.x - content.minX) / content.width,
-                       y: (inCanvas.y - content.minY) / content.height)
+        let c = CGPoint(x: bounds.midX, y: bounds.midY)
+
+        var p = local
+        if zoom > 0.001, abs(zoom - 1) > 0.001 {
+            p.x = c.x + (p.x - c.x) / zoom
+            p.y = c.y + (p.y - c.y) / zoom
+        }
+        p.x -= pan.width
+        p.y -= pan.height
+
+        let rect = displayRect()
+        guard rect.width > 1, rect.height > 1 else { return CGPoint(x: 0.5, y: 0.5) }
+        return CGPoint(x: (p.x - rect.minX) / rect.width,
+                       y: (p.y - rect.minY) / rect.height)
     }
 
-    /// 视频画面在 canvasLayer 里实际占的矩形；等比模式会有黑边，裁切模式会超出
-    private func videoRect(in box: CGRect) -> CGRect {
-        guard videoSize.width > 1, videoSize.height > 1 else { return box }
-        let videoAspect = videoSize.width / videoSize.height
-        let boxAspect = box.width / box.height
+    /// 画面在屏幕上实际占的矩形：拉伸铺满＝整块屏；等比＝居中留黑边
+    private func displayRect() -> CGRect {
         switch mode {
-        case .stretch:
-            return box
+        case .stretch, .crop:
+            return CGRect(origin: .zero, size: bounds.size)
         case .aspect:
-            if videoAspect > boxAspect {
-                let h = box.width / videoAspect
-                return CGRect(x: box.minX, y: box.midY - h / 2, width: box.width, height: h)
+            guard videoSize.width > 1, videoSize.height > 1 else {
+                return CGRect(origin: .zero, size: bounds.size)
             }
-            let w = box.height * videoAspect
-            return CGRect(x: box.midX - w / 2, y: box.minY, width: w, height: box.height)
-        case .crop:
+            let videoAspect = videoSize.width / videoSize.height
+            let boxAspect = bounds.width / max(1, bounds.height)
             if videoAspect > boxAspect {
-                let w = box.height * videoAspect
-                return CGRect(x: box.midX - w / 2, y: box.minY, width: w, height: box.height)
+                let h = bounds.width / videoAspect
+                return CGRect(x: 0, y: bounds.midY - h / 2, width: bounds.width, height: h)
             }
-            let h = box.width / videoAspect
-            return CGRect(x: box.minX, y: box.midY - h / 2, width: box.width, height: h)
+            let w = bounds.height * videoAspect
+            return CGRect(x: bounds.midX - w / 2, y: 0, width: w, height: bounds.height)
         }
     }
 }
