@@ -25,13 +25,10 @@ struct PreviewCanvas: UIViewRepresentable {
     func makeUIView(context: Context) -> PreviewCanvasView {
         let view = PreviewCanvasView()
         view.attach(session)
+        view.mapper = mapper
         view.onViewportChange = { zoom, pan in
             context.coordinator.viewport.zoom = zoom
             context.coordinator.viewport.pan = pan
-        }
-        // 笔的坐标换算交给画面层自己做，跟随旋转/镜像/缩放/留边实时变化
-        mapper.provider = { [weak view] point in
-            view?.normalizedVideoPoint(windowPoint: point) ?? CGPoint(x: 0.5, y: 0.5)
         }
         return view
     }
@@ -67,6 +64,9 @@ final class PreviewCanvasView: UIView {
     private var mode: DisplayMode = .stretch
     private var videoSize = CGSize(width: 2560, height: 1440)
     private var lastToken = 0
+
+    /// 笔的坐标换算入口；每次布局/应用变换都把自己登记进去，保证拿到的是当前在屏的这一份
+    weak var mapper: PenMapper?
 
     private var startZoom: CGFloat = 1
     private var startPan: CGSize = .zero
@@ -143,6 +143,7 @@ final class PreviewCanvasView: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        mapper?.target = self
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         let size = layerSize()
@@ -196,7 +197,13 @@ final class PreviewCanvasView: UIView {
         if mirrorH != newMirrorH { mirrorH = newMirrorH }
         if mirrorV != newMirrorV { mirrorV = newMirrorV }
 
+        mapper?.target = self
         applyTransform()
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if window != nil { mapper?.target = self }
     }
 
     private func applyTransform() {
@@ -221,6 +228,7 @@ final class PreviewCanvasView: UIView {
     ///      → 按 videoGravity 扣掉留边 → 归一化。
     /// 只要最终归一化到视频画面，电脑端就是 1:1 对应桌面像素，不需要再手工加偏移。
     func normalizedVideoPoint(windowPoint: CGPoint) -> CGPoint {
+        if needsLayout { layoutIfNeeded() }
         let local = convert(windowPoint, from: nil)
         let inCanvas = canvasLayer.convert(local, from: layer)
         let content = videoRect(in: CGRect(origin: .zero, size: canvasLayer.bounds.size))

@@ -4,15 +4,14 @@ import SwiftUI
 import UIKit
 
 /// 把 App 内部算出的「视频画面归一化坐标」交给笔控件。
-/// PreviewCanvas 每次布局后都会更新 provider，笔事件发生时按当前变换取坐标，
-/// 这样旋转 / 镜像 / 缩放 / 平移 / 留边全都自动算进去，不需要手工校准偏移。
+/// 这里不缓存任何画面实例/变换：笔落下的那一刻直接问当前那个真正在屏上的画面层，
+/// 所以改旋转、改镜像、改缩放之后不会用到旧的状态。
 final class PenMapper: ObservableObject {
-    /// 输入：窗口坐标（UIKit 的 location(in: nil)）
-    /// 输出：视频画面里的 0~1 坐标（可能略超出范围，交给电脑端裁剪）
-    var provider: ((CGPoint) -> CGPoint)?
+    weak var target: PreviewCanvasView?
 
     func map(_ windowPoint: CGPoint) -> CGPoint {
-        provider?(windowPoint) ?? CGPoint(x: 0.5, y: 0.5)
+        guard let view = target else { return CGPoint(x: 0.5, y: 0.5) }
+        return view.normalizedVideoPoint(windowPoint: windowPoint)
     }
 }
 
