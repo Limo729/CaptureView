@@ -19,7 +19,7 @@ struct PreviewCanvas: UIViewRepresentable {
 
     func makeUIView(context: Context) -> PreviewCanvasView {
         let view = PreviewCanvasView()
-        view.attach(session: session)
+        view.attach(session)
         view.onViewportChange = { zoom, pan in
             context.coordinator.viewport.zoom = zoom
             context.coordinator.viewport.pan = pan
