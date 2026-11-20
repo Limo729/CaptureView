@@ -137,12 +137,22 @@ final class PreviewCanvasView: UIView {
         super.layoutSubviews()
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        canvasLayer.bounds = CGRect(origin: .zero, size: bounds.size)
+        let size = layerSize()
+        canvasLayer.bounds = CGRect(origin: .zero, size: size)
         canvasLayer.position = CGPoint(x: bounds.midX, y: bounds.midY)
-        previewLayer.bounds = CGRect(origin: .zero, size: bounds.size)
+        previewLayer.bounds = CGRect(origin: .zero, size: size)
         previewLayer.position = CGPoint(x: bounds.midX, y: bounds.midY)
         CATransaction.commit()
         applyTransform()
+    }
+
+    /// 旋转 90°/270° 时把图层宽高互换，
+    /// 这样图层转过来正好覆盖整个屏幕，拉伸铺满不留黑边
+    private func layerSize() -> CGSize {
+        let isQuarterTurn = abs(sin(rotation)) > 0.999
+        return isQuarterTurn
+            ? CGSize(width: bounds.height, height: bounds.width)
+            : bounds.size
     }
 
     func apply(mode newMode: DisplayMode, rotation degrees: Double,
@@ -163,7 +173,11 @@ final class PreviewCanvasView: UIView {
             pan = newPan
         }
         let radians = CGFloat(degrees * Double.pi / 180)
-        if abs(rotation - radians) > 0.001 { rotation = radians }
+        if abs(rotation - radians) > 0.001 {
+            rotation = radians
+            // 旋转角度变了，图层宽高可能要互换，重新布局
+            setNeedsLayout()
+        }
         if mirrorH != newMirrorH { mirrorH = newMirrorH }
         if mirrorV != newMirrorV { mirrorV = newMirrorV }
 

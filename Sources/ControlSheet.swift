@@ -187,9 +187,8 @@ struct ControlSheet: View {
             }
 
             Section {
-                Button("按屏幕原分辨率铺满（横屏 2388 × 1668）") {
+                Button("按屏幕铺满（横屏 2388 × 1668）") {
                     mode = .stretch
-                    rotation = 0
                     viewport.reset()
                 }
             } footer: {

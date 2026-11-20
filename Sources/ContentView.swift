@@ -6,10 +6,11 @@ struct ContentView: View {
     @StateObject private var capture = CaptureController()
     @StateObject private var viewport = Viewport()
 
-    @State private var mode: DisplayMode = .stretch
-    @State private var rotation: Double = 0
-    @State private var mirrorH = false
-    @State private var mirrorV = false
+    // 这些设置存进 UserDefaults，下次开 App 保持上次的状态
+    @AppStorage("displayMode") private var modeRaw = DisplayMode.stretch.rawValue
+    @AppStorage("displayRotation") private var rotation: Double = 270
+    @AppStorage("mirrorH") private var mirrorH = false
+    @AppStorage("mirrorV") private var mirrorV = false
     @State private var showGuides = false
     @State private var showChrome = true
     @State private var showPanel = false
@@ -19,6 +20,14 @@ struct ContentView: View {
     @AppStorage("orientationLock") private var orientationLockRaw = OrientationLock.landscape.rawValue
 
     @Environment(\.scenePhase) private var scenePhase
+
+    private var mode: DisplayMode {
+        DisplayMode(rawValue: modeRaw) ?? .stretch
+    }
+
+    private var modeBinding: Binding<DisplayMode> {
+        Binding(get: { mode }, set: { modeRaw = $0.rawValue })
+    }
 
     var body: some View {
         ZStack {
@@ -51,7 +60,7 @@ struct ContentView: View {
         .sheet(isPresented: $showPanel) {
             ControlSheet(capture: capture,
                          viewport: viewport,
-                         mode: $mode,
+                         mode: modeBinding,
                          rotation: $rotation,
                          showGuides: $showGuides,
                          tab: $sheetTab)
