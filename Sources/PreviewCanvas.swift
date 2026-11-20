@@ -1,0 +1,161 @@
+import AVFoundation
+import SwiftUI
+import UIKit
+
+struct PreviewCanvas: UIViewRepresentable {
+    let session: AVCaptureSession
+    let mode: DisplayMode
+    let rotation: Double
+    @ObservedObject var viewport: Viewport
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(viewport: viewport)
+    }
+
+    final class Coordinator {
+        let viewport: Viewport
+        init(viewport: Viewport) { self.viewport = viewport }
+    }
+
+    func makeUIView(context: Context) -> PreviewCanvasView {
+        let view = PreviewCanvasView()
+        view.attach(session: session)
+        view.onViewportChange = { zoom, pan in
+            context.coordinator.viewport.zoom = zoom
+            context.coordinator.viewport.pan = pan
+        }
+        return view
+    }
+
+    func updateUIView(_ uiView: PreviewCanvasView, context: Context) {
+        uiView.apply(
+            mode: mode,
+            rotation: rotation,
+            zoom: viewport.zoom,
+            pan: viewport.pan,
+            resetToken: viewport.resetToken
+        )
+    }
+}
+
+/// 画面容器：预览层放在一个中间层里，缩放/旋转作用在中间层，
+/// 避免直接改 AVCaptureVideoPreviewLayer 的 transform（那样在部分系统版本上会被忽略）
+final class PreviewCanvasView: UIView {
+
+    private let canvasLayer = CALayer()
+    private let previewLayer = AVCaptureVideoPreviewLayer()
+    var onViewportChange: ((CGFloat, CGSize) -> Void)?
+
+    private var zoom: CGFloat = 1
+    private var pan: CGSize = .zero
+    private var rotation: CGFloat = 0
+    private var mode: DisplayMode = .stretch
+    private var lastToken = 0
+
+    private var startZoom: CGFloat = 1
+    private var startPan: CGSize = .zero
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        commonSetup()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        commonSetup()
+    }
+
+    private func commonSetup() {
+        backgroundColor = .black
+        clipsToBounds = true
+        previewLayer.videoGravity = .resize
+        layer.addSublayer(canvasLayer)
+        canvasLayer.addSublayer(previewLayer)
+        setupGestures()
+    }
+
+    func attach(_ session: AVCaptureSession) {
+        previewLayer.session = session
+    }
+
+    private func setupGestures() {
+        let pinch = UIPinchGestureRecognizer(target: self, action: #selector(handlePinch(_:)))
+        let pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
+        pan.minimumNumberOfTouches = 2
+        pan.maximumNumberOfTouches = 2
+        addGestureRecognizer(pinch)
+        addGestureRecognizer(pan)
+    }
+
+    @objc private func handlePinch(_ gesture: UIPinchGestureRecognizer) {
+        switch gesture.state {
+        case .began:
+            startZoom = zoom
+        case .changed:
+            zoom = Swift.min(Swift.max(startZoom * gesture.scale, 0.5), 8)
+            applyTransform()
+            onViewportChange?(zoom, pan)
+        default:
+            break
+        }
+    }
+
+    @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
+        switch gesture.state {
+        case .began:
+            startPan = pan
+        case .changed:
+            let t = gesture.translation(in: self)
+            pan = CGSize(width: startPan.width + t.x, height: startPan.height + t.y)
+            applyTransform()
+            onViewportChange?(zoom, pan)
+        default:
+            break
+        }
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        canvasLayer.bounds = CGRect(origin: .zero, size: bounds.size)
+        canvasLayer.position = CGPoint(x: bounds.midX, y: bounds.midY)
+        previewLayer.bounds = CGRect(origin: .zero, size: bounds.size)
+        previewLayer.position = CGPoint(x: bounds.midX, y: bounds.midY)
+        CATransaction.commit()
+        applyTransform()
+    }
+
+    func apply(mode newMode: DisplayMode, rotation degrees: Double,
+               zoom newZoom: CGFloat, pan newPan: CGSize, resetToken: Int) {
+
+        if resetToken != lastToken {
+            lastToken = resetToken
+            zoom = 1
+            pan = .zero
+        }
+        if mode != newMode {
+            mode = newMode
+            previewLayer.videoGravity = newMode.gravity
+        }
+        if abs(zoom - newZoom) > 0.002 { zoom = newZoom }
+        if abs(pan.width - newPan.width) > 0.5 || abs(pan.height - newPan.height) > 0.5 {
+            pan = newPan
+        }
+        let radians = CGFloat(degrees * Double.pi / 180)
+        if abs(rotation - radians) > 0.001 { rotation = radians }
+
+        applyTransform()
+    }
+
+    private func applyTransform() {
+        var t = CGAffineTransform(translationX: pan.width, y: pan.height)
+        t = t.scaledBy(x: zoom, y: zoom)
+        t = t.rotated(by: rotation)
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        canvasLayer.setAffineTransform(t)
+        CATransaction.commit()
+    }
+}
