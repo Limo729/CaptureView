@@ -6,6 +6,7 @@ struct ContentView: View {
     @StateObject private var capture = CaptureController()
     @StateObject private var viewport = Viewport()
     @StateObject private var pencil = PencilClient()
+    @StateObject private var mapper = PenMapper()
 
     // 设置存 UserDefaults，下次开 App 保持上次状态
     @AppStorage("displayMode") private var modeRaw = DisplayMode.stretch.rawValue
@@ -43,6 +44,8 @@ struct ContentView: View {
                               mirrorH: mirrorH,
                               mirrorV: mirrorV,
                               allowGestures: allowGestures,
+                              videoSize: capture.videoSize,
+                              mapper: mapper,
                               viewport: viewport)
                     .ignoresSafeArea()
 
@@ -52,7 +55,7 @@ struct ContentView: View {
                 }
 
                 if pencilMode {
-                    PencilSurface(client: pencil)
+                    PencilSurface(client: pencil, mapper: mapper)
                         .ignoresSafeArea()
                 }
 
@@ -62,13 +65,15 @@ struct ContentView: View {
                 toggleButton
             }
             // 从屏幕最左边往右划超过 3/4 宽度，唤出按键
+            // 笔模式下一律关掉，否则画到边缘会被这个手势判成取消，整笔断掉
             .gesture(
                 DragGesture(minimumDistance: 40)
                     .onEnded { value in
                         guard value.startLocation.x < 80 else { return }
                         guard value.translation.width > geo.size.width * 0.75 else { return }
                         revealTools()
-                    }
+                    },
+                including: pencilMode ? .none : .all
             )
         }
         .statusBarHidden(true)
@@ -226,6 +231,12 @@ struct ContentView: View {
                 Text(pencil.connected ? "笔 \(Int(pencil.lastPressure * 100))%" : "笔 未连")
                     .font(.system(size: 12, weight: .regular, design: .monospaced))
                     .foregroundStyle(pencil.connected ? Color.green.opacity(0.9) : Color.orange.opacity(0.9))
+
+                if pencil.connected {
+                    Text("\(Int(pencil.sampleRate.rounded())) 点/秒")
+                        .font(.system(size: 12, weight: .regular, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.55))
+                }
             }
         }
         .foregroundStyle(.white)

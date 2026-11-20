@@ -9,6 +9,8 @@ struct PreviewCanvas: UIViewRepresentable {
     let mirrorH: Bool
     let mirrorV: Bool
     let allowGestures: Bool
+    let videoSize: CGSize
+    var mapper: PenMapper
     @ObservedObject var viewport: Viewport
 
     func makeCoordinator() -> Coordinator {
@@ -27,6 +29,10 @@ struct PreviewCanvas: UIViewRepresentable {
             context.coordinator.viewport.zoom = zoom
             context.coordinator.viewport.pan = pan
         }
+        // 笔的坐标换算交给画面层自己做，跟随旋转/镜像/缩放/留边实时变化
+        mapper.provider = { [weak view] point in
+            view?.normalizedVideoPoint(windowPoint: point) ?? CGPoint(x: 0.5, y: 0.5)
+        }
         return view
     }
 
@@ -37,6 +43,7 @@ struct PreviewCanvas: UIViewRepresentable {
             rotation: rotation,
             mirrorH: mirrorH,
             mirrorV: mirrorV,
+            videoSize: videoSize,
             zoom: viewport.zoom,
             pan: viewport.pan,
             resetToken: viewport.resetToken
@@ -58,6 +65,7 @@ final class PreviewCanvasView: UIView {
     private var mirrorH = false
     private var mirrorV = false
     private var mode: DisplayMode = .stretch
+    private var videoSize = CGSize(width: 2560, height: 1440)
     private var lastToken = 0
 
     private var startZoom: CGFloat = 1
@@ -160,6 +168,7 @@ final class PreviewCanvasView: UIView {
 
     func apply(mode newMode: DisplayMode, rotation degrees: Double,
                mirrorH newMirrorH: Bool, mirrorV newMirrorV: Bool,
+               videoSize newVideoSize: CGSize = CGSize(width: 2560, height: 1440),
                zoom newZoom: CGFloat, pan newPan: CGSize, resetToken: Int) {
 
         if resetToken != lastToken {
@@ -170,6 +179,9 @@ final class PreviewCanvasView: UIView {
         if mode != newMode {
             mode = newMode
             previewLayer.videoGravity = newMode.gravity
+        }
+        if newVideoSize.width > 1, newVideoSize.height > 1, videoSize != newVideoSize {
+            videoSize = newVideoSize
         }
         if abs(zoom - newZoom) > 0.002 { zoom = newZoom }
         if abs(pan.width - newPan.width) > 0.5 || abs(pan.height - newPan.height) > 0.5 {
@@ -200,5 +212,45 @@ final class PreviewCanvasView: UIView {
         CATransaction.setDisableActions(true)
         canvasLayer.setAffineTransform(t)
         CATransaction.commit()
+    }
+
+    // MARK: - 笔坐标换算
+
+    /// 窗口坐标 → 视频画面里的 0~1 坐标。
+    /// 路径：窗口点 → 本视图坐标 → canvasLayer 内容坐标（自动扣掉旋转/镜像/缩放/平移）
+    ///      → 按 videoGravity 扣掉留边 → 归一化。
+    /// 只要最终归一化到视频画面，电脑端就是 1:1 对应桌面像素，不需要再手工加偏移。
+    func normalizedVideoPoint(windowPoint: CGPoint) -> CGPoint {
+        let local = convert(windowPoint, from: nil)
+        let inCanvas = canvasLayer.convert(local, from: layer)
+        let content = videoRect(in: CGRect(origin: .zero, size: canvasLayer.bounds.size))
+        guard content.width > 1, content.height > 1 else { return CGPoint(x: 0.5, y: 0.5) }
+        return CGPoint(x: (inCanvas.x - content.minX) / content.width,
+                       y: (inCanvas.y - content.minY) / content.height)
+    }
+
+    /// 视频画面在 canvasLayer 里实际占的矩形；等比模式会有黑边，裁切模式会超出
+    private func videoRect(in box: CGRect) -> CGRect {
+        guard videoSize.width > 1, videoSize.height > 1 else { return box }
+        let videoAspect = videoSize.width / videoSize.height
+        let boxAspect = box.width / box.height
+        switch mode {
+        case .stretch:
+            return box
+        case .aspect:
+            if videoAspect > boxAspect {
+                let h = box.width / videoAspect
+                return CGRect(x: box.minX, y: box.midY - h / 2, width: box.width, height: h)
+            }
+            let w = box.height * videoAspect
+            return CGRect(x: box.midX - w / 2, y: box.minY, width: w, height: box.height)
+        case .crop:
+            if videoAspect > boxAspect {
+                let w = box.height * videoAspect
+                return CGRect(x: box.midX - w / 2, y: box.minY, width: w, height: box.height)
+            }
+            let h = box.width / videoAspect
+            return CGRect(x: box.minX, y: box.midY - h / 2, width: box.width, height: h)
+        }
     }
 }

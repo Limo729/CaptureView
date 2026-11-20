@@ -16,6 +16,8 @@ final class CaptureController: NSObject, ObservableObject {
     @Published var currentText = "等待设备…"
     @Published var displayHz = 0
     @Published var measuredFPS: Double = 0
+    /// 当前视频流的真实像素尺寸，笔的坐标换算要用它算留边
+    @Published var videoSize = CGSize(width: 2560, height: 1440)
 
     private let queue = DispatchQueue(label: "local.captureview.session")
     private let meterQueue = DispatchQueue(label: "local.captureview.meter")
@@ -224,6 +226,7 @@ final class CaptureController: NSObject, ObservableObject {
         setMain(maxFPS: target.maxFPS)
         setMain(selectedFPS: clamped)
         setMain(current: "\(target.title) · \(target.codec) · \(Int(clamped))fps")
+        setMain(video: CGSize(width: target.width, height: target.height))
         defaults.set(target.width, forKey: "fmtWidth")
         defaults.set(target.height, forKey: "fmtHeight")
         defaults.set(target.maxFPS, forKey: "fmtFPS")
@@ -309,7 +312,8 @@ final class CaptureController: NSObject, ObservableObject {
                          selectedFormatID id: Int? = nil,
                          maxFPS maxV: Double? = nil,
                          selectedFPS fps: Double? = nil,
-                         measured: Double? = nil) {
+                         measured: Double? = nil,
+                         video size: CGSize? = nil) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             if let t = text { self.currentText = t }
@@ -319,6 +323,7 @@ final class CaptureController: NSObject, ObservableObject {
             if let m = maxV { self.maxFPS = m }
             if let f = fps { self.selectedFPS = f }
             if let v = measured { self.measuredFPS = v }
+            if let s = size { self.videoSize = s }
         }
     }
 
