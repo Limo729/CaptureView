@@ -19,6 +19,7 @@ jobs:
 
       - name: 编译（不签名）
         run: |
+          set -o pipefail
           xcodebuild \
             -project CaptureView.xcodeproj \
             -scheme CaptureView \
@@ -28,7 +29,19 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
-            build
+            build 2>&1 | tee build.log || true
+
+          if grep -q "BUILD SUCCEEDED" build.log; then
+            echo "编译成功"
+            exit 0
+          fi
+
+          echo "::error::编译失败，下面是报错行"
+          grep -E "(error|Error): " build.log | grep -v "note:" | head -n 15 | while IFS= read -r line; do
+            echo "::error::$line"
+          done
+          tail -n 60 build.log
+          exit 1
 
       - name: 打包 IPA
         run: |
