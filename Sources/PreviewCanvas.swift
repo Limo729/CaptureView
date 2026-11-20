@@ -228,7 +228,10 @@ final class PreviewCanvasView: UIView {
     ///      → 按 videoGravity 扣掉留边 → 归一化。
     /// 只要最终归一化到视频画面，电脑端就是 1:1 对应桌面像素，不需要再手工加偏移。
     func normalizedVideoPoint(windowPoint: CGPoint) -> CGPoint {
-        if needsLayout { layoutIfNeeded() }
+        // 万一还没排过版（图层尺寸是 0），先强制布局一次，避免除以 0 或算到空矩形
+        if canvasLayer.bounds.width < 1 || canvasLayer.bounds.height < 1 {
+            layoutIfNeeded()
+        }
         let local = convert(windowPoint, from: nil)
         let inCanvas = canvasLayer.convert(local, from: layer)
         let content = videoRect(in: CGRect(origin: .zero, size: canvasLayer.bounds.size))
