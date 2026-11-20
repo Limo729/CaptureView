@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ControlSheet: View {
     @ObservedObject var capture: CaptureController
+    @ObservedObject var pencil: PencilClient
     @ObservedObject var viewport: Viewport
 
     @Binding var mode: DisplayMode
@@ -11,6 +12,9 @@ struct ControlSheet: View {
 
     @AppStorage("orientationLock") private var orientationLockRaw = OrientationLock.landscape.rawValue
     @AppStorage("allowGestures") private var allowGestures = true
+    @AppStorage("pencilMode") private var pencilMode = false
+    @AppStorage("penHost") private var penHost = ""
+    @AppStorage("penPort") private var penPort = 47800
 
     @Environment(\.dismiss) private var dismiss
 
@@ -202,6 +206,30 @@ struct ControlSheet: View {
 
     private var perfTab: some View {
         List {
+            Section {
+                Toggle("笔控模式（Apple Pencil 控制电脑鼠标）", isOn: $pencilMode)
+                    .onChange(of: pencilMode) { _, on in
+                        if on { pencil.connect() } else { pencil.disconnect() }
+                    }
+                TextField("电脑 IP，例如 192.168.1.10", text: $penHost)
+                    .keyboardType(.numbersAndPunctuation)
+                    .autocorrectionDisabled()
+                TextField("端口", value: $penPort, format: .number)
+                    .keyboardType(.numberPad)
+                HStack {
+                    Text(pencil.status)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("重新连接") { pencil.connect() }
+                }
+                LabeledContent("当前压力", value: "\(Int(pencil.lastPressure * 100)) %")
+            } header: {
+                Text("笔控")
+            } footer: {
+                Text("电脑端要先运行 pen_bridge.py，iPad 才能连上。坐标和压力都会一起发过去；Photoshop 要吃压感还需要系统里存在一个虚拟数位板，那一步单独处理。")
+            }
+
             Section("当前状态") {
                 LabeledContent("采集格式", value: capture.currentText)
                 LabeledContent("设备", value: capture.deviceName)

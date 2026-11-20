@@ -5,16 +5,19 @@ struct ContentView: View {
 
     @StateObject private var capture = CaptureController()
     @StateObject private var viewport = Viewport()
+    @StateObject private var pencil = PencilClient()
 
-    // 这些设置存进 UserDefaults，下次开 App 保持上次的状态
+    // 设置存 UserDefaults，下次开 App 保持上次状态
     @AppStorage("displayMode") private var modeRaw = DisplayMode.stretch.rawValue
     @AppStorage("displayRotation") private var rotation: Double = 270
     @AppStorage("mirrorH") private var mirrorH = false
     @AppStorage("mirrorV") private var mirrorV = false
+    @AppStorage("pencilMode") private var pencilMode = false
     @State private var showGuides = false
     @State private var showTools = true
     @State private var showPanel = false
     @State private var sheetTab = 0
+    @State private var hideWork: DispatchWorkItem?
 
     @AppStorage("allowGestures") private var allowGestures = true
     @AppStorage("orientationLock") private var orientationLockRaw = OrientationLock.landscape.rawValue
@@ -30,38 +33,49 @@ struct ContentView: View {
     }
 
     var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
+        GeometryReader { geo in
+            ZStack {
+                Color.black.ignoresSafeArea()
 
-            PreviewCanvas(session: capture.session,
-                          mode: mode,
-                          rotation: rotation,
-                          mirrorH: mirrorH,
-                          mirrorV: mirrorV,
-                          allowGestures: allowGestures,
-                          viewport: viewport)
-                .ignoresSafeArea()
+                PreviewCanvas(session: capture.session,
+                              mode: mode,
+                              rotation: rotation,
+                              mirrorH: mirrorH,
+                              mirrorV: mirrorV,
+                              allowGestures: allowGestures,
+                              viewport: viewport)
+                    .ignoresSafeArea()
 
-            if showGuides {
-                GuideOverlay()
-                    .allowsHitTesting(false)
+                if showGuides {
+                    GuideOverlay()
+                        .allowsHitTesting(false)
+                }
+
+                if pencilMode {
+                    PencilSurface(client: pencil)
+                        .ignoresSafeArea()
+                }
+
+                chrome
             }
-
-            chrome
-        }
-        .overlay(alignment: .bottomLeading) {
-            toggleButton
-        }
-        .contentShape(Rectangle())
-        .onTapGesture {
-            withAnimation(.easeInOut(duration: 0.2)) {
-                showTools.toggle()
+            .overlay(alignment: .bottomLeading) {
+                toggleButton
             }
+            // 从屏幕最左边往右划超过 3/4 宽度，唤出按键
+            .gesture(
+                DragGesture(minimumDistance: 40)
+                    .onEnded { value in
+                        guard value.startLocation.x < 80 else { return }
+                        guard value.translation.width > geo.size.width * 0.75 else { return }
+                        revealTools()
+                    }
+            )
         }
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
         .sheet(isPresented: $showPanel) {
             ControlSheet(capture: capture,
+                         pencil: pencil,
                          viewport: viewport,
                          mode: modeBinding,
                          rotation: $rotation,
@@ -73,24 +87,55 @@ struct ContentView: View {
             let lock = OrientationLock(rawValue: orientationLockRaw) ?? .landscape
             applyOrientationLock(lock)
             capture.start()
+            if pencilMode { pencil.connect() }
+            scheduleHide()
         }
         .onDisappear {
             UIApplication.shared.isIdleTimerDisabled = false
+            pencil.disconnect()
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
                 UIApplication.shared.isIdleTimerDisabled = true
                 capture.start()
+                if pencilMode { pencil.connect() }
             }
         }
+        .onChange(of: showPanel) { _, presented in
+            if presented { hideWork?.cancel() } else { scheduleHide() }
+        }
+    }
+
+    // MARK: - 按键自动隐藏（3 秒无操作）
+
+    private func revealTools() {
+        withAnimation(.easeInOut(duration: 0.2)) {
+            showTools = true
+        }
+        scheduleHide()
+    }
+
+    private func scheduleHide() {
+        hideWork?.cancel()
+        let work = DispatchWorkItem {
+            guard !showPanel else { return }
+            withAnimation(.easeInOut(duration: 0.2)) {
+                showTools = false
+            }
+        }
+        hideWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3, execute: work)
     }
 
     // MARK: - 左下角圆形开关
 
     private var toggleButton: some View {
         Button {
-            withAnimation(.easeInOut(duration: 0.2)) {
-                showTools.toggle()
+            if showTools {
+                hideWork?.cancel()
+                withAnimation(.easeInOut(duration: 0.2)) { showTools = false }
+            } else {
+                revealTools()
             }
         } label: {
             Image(systemName: showTools ? "chevron.down" : "square.grid.2x2")
@@ -127,6 +172,14 @@ struct ContentView: View {
                     toolButton("rectangle.on.rectangle", "画面") {
                         sheetTab = 1
                         showPanel = true
+                    }
+                    toolButton("pencil.tip", "笔", active: pencilMode) {
+                        pencilMode.toggle()
+                        if pencilMode {
+                            pencil.connect()
+                        } else {
+                            pencil.disconnect()
+                        }
                     }
                     toolButton("arrow.left.arrow.right", "左右镜像", active: mirrorH) {
                         mirrorH.toggle()
@@ -168,6 +221,12 @@ struct ContentView: View {
             Text("屏 \(capture.displayHz)Hz")
                 .font(.system(size: 12, weight: .regular, design: .monospaced))
                 .foregroundStyle(.white.opacity(0.55))
+
+            if pencilMode {
+                Text(pencil.connected ? "笔 \(Int(pencil.lastPressure * 100))%" : "笔 未连")
+                    .font(.system(size: 12, weight: .regular, design: .monospaced))
+                    .foregroundStyle(pencil.connected ? Color.green.opacity(0.9) : Color.orange.opacity(0.9))
+            }
         }
         .foregroundStyle(.white)
         .padding(.horizontal, 14)
@@ -178,7 +237,11 @@ struct ContentView: View {
     private func toolButton(_ icon: String, _ title: String,
                             active: Bool = false,
                             action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+        Button {
+            // 每次点按键都重新计时，3 秒没新操作再收起
+            scheduleHide()
+            action()
+        } label: {
             VStack(spacing: 3) {
                 Image(systemName: icon)
                     .font(.system(size: 16, weight: .semibold))
