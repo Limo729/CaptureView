@@ -143,7 +143,7 @@ struct ControlSheet: View {
 
     private var displayTab: some View {
         List {
-            Section("屏幕方向") {
+            Section {
                 Picker("屏幕方向", selection: $orientationLockRaw) {
                     ForEach(OrientationLock.allCases) { o in
                         Text(o.title).tag(o.rawValue)
@@ -154,6 +154,8 @@ struct ControlSheet: View {
                     applyOrientationLock(OrientationLock(rawValue: newValue) ?? .landscape)
                 }
                 Toggle("允许双指缩放与平移", isOn: $allowGestures)
+            } header: {
+                Text("屏幕方向")
             } footer: {
                 Text("默认锁定横屏。关掉手势开关后，双指缩放和平移都不响应，画面不会被误触带动。")
             }
