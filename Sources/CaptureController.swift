@@ -126,7 +126,7 @@ final class CaptureController: NSObject, ObservableObject {
                 id: index,
                 width: Int(dims.width),
                 height: Int(dims.height),
-                codec: codecName(format.mediaSubType),
+                codec: codecName(CMFormatDescriptionGetMediaSubType(format.formatDescription)),
                 minFPS: minF,
                 maxFPS: maxF
             ))
