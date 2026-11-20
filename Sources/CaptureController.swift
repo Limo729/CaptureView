@@ -15,8 +15,12 @@ final class CaptureController: NSObject, ObservableObject {
     @Published var maxFPS: Double = 60
     @Published var currentText = "等待设备…"
     @Published var displayHz = 0
+    @Published var measuredFPS: Double = 0
 
     private let queue = DispatchQueue(label: "local.captureview.session")
+    private let meterQueue = DispatchQueue(label: "local.captureview.meter")
+    private let videoOutput = AVCaptureVideoDataOutput()
+    private let frameMeter = FrameMeter()
     private var deviceInput: AVCaptureDeviceInput?
     private var device: AVCaptureDevice?
     private var displayLink: CADisplayLink?
@@ -34,6 +38,9 @@ final class CaptureController: NSObject, ObservableObject {
                            name: .AVCaptureDeviceWasDisconnected, object: nil)
         center.addObserver(self, selector: #selector(sessionError),
                            name: .AVCaptureSessionRuntimeError, object: session)
+        frameMeter.onUpdate = { [weak self] fps in
+            self?.setMain(measured: fps)
+        }
     }
 
     deinit {
@@ -93,6 +100,12 @@ final class CaptureController: NSObject, ObservableObject {
             if session.canAddInput(input) {
                 session.addInput(input)
                 deviceInput = input
+                if session.canAddOutput(videoOutput) {
+                    videoOutput.alwaysDiscardsLateVideoFrames = true
+                    videoOutput.videoSettings = nil
+                    videoOutput.setSampleBufferDelegate(frameMeter, queue: meterQueue)
+                    session.addOutput(videoOutput)
+                }
             } else {
                 setMain(current: "无法添加该设备作为输入")
             }
@@ -110,8 +123,11 @@ final class CaptureController: NSObject, ObservableObject {
         return external.first
     }
 
+    /// UVC 设备常把同一分辨率/编码重复上报多次，这里按「分辨率 + 编码 + 帧率区间」去重，
+    /// 同一个组合只留一条，避免列表里一堆看起来一样的项
     private func loadFormats(_ device: AVCaptureDevice) -> [FormatDescriptor] {
-        var list: [FormatDescriptor] = []
+        var seen: [String: FormatDescriptor] = [:]
+
         for (index, format) in device.formats.enumerated() {
             let dims = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
             var minF = Double.greatestFiniteMagnitude
@@ -122,15 +138,26 @@ final class CaptureController: NSObject, ObservableObject {
             }
             guard maxF > 0 else { continue }
             if minF == .greatestFiniteMagnitude { minF = 0 }
-            list.append(FormatDescriptor(
+
+            let codec = codecName(CMFormatDescriptionGetMediaSubType(format.formatDescription))
+            let candidate = FormatDescriptor(
                 id: index,
                 width: Int(dims.width),
                 height: Int(dims.height),
-                codec: codecName(CMFormatDescriptionGetMediaSubType(format.formatDescription)),
+                codec: codec,
                 minFPS: minF,
                 maxFPS: maxF
-            ))
+            )
+
+            let key = "\(candidate.width)x\(candidate.height)|\(codec)|\(Int(minF.rounded()))|\(Int(maxF.rounded()))"
+            if let existing = seen[key] {
+                if candidate.maxFPS > existing.maxFPS { seen[key] = candidate }
+            } else {
+                seen[key] = candidate
+            }
         }
+
+        var list = Array(seen.values)
         list.sort { a, b in
             if a.pixels != b.pixels { return a.pixels > b.pixels }
             return a.maxFPS > b.maxFPS
@@ -281,7 +308,8 @@ final class CaptureController: NSObject, ObservableObject {
                          formats list: [FormatDescriptor]? = nil,
                          selectedFormatID id: Int? = nil,
                          maxFPS maxV: Double? = nil,
-                         selectedFPS fps: Double? = nil) {
+                         selectedFPS fps: Double? = nil,
+                         measured: Double? = nil) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             if let t = text { self.currentText = t }
@@ -290,6 +318,7 @@ final class CaptureController: NSObject, ObservableObject {
             if let i = id { self.selectedFormatID = i }
             if let m = maxV { self.maxFPS = m }
             if let f = fps { self.selectedFPS = f }
+            if let v = measured { self.measuredFPS = v }
         }
     }
 
@@ -314,5 +343,28 @@ final class CaptureController: NSObject, ObservableObject {
         default:
             return raw
         }
+    }
+}
+
+/// 统计真实到达的帧率：UVC 上报的帧率区间经常是错的，
+/// 这个读数才代表实际链路跑出来的帧数
+final class FrameMeter: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
+
+    var onUpdate: ((Double) -> Void)?
+
+    private var windowStart = CACurrentMediaTime()
+    private var count = 0
+
+    func captureOutput(_ output: AVCaptureOutput,
+                       didOutput sampleBuffer: CMSampleBuffer,
+                       from connection: AVCaptureConnection) {
+        count += 1
+        let now = CACurrentMediaTime()
+        let elapsed = now - windowStart
+        guard elapsed >= 1.0 else { return }
+        let fps = Double(count) / elapsed
+        count = 0
+        windowStart = now
+        onUpdate?(fps)
     }
 }

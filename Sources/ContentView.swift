@@ -12,7 +12,7 @@ struct ContentView: View {
     @AppStorage("mirrorH") private var mirrorH = false
     @AppStorage("mirrorV") private var mirrorV = false
     @State private var showGuides = false
-    @State private var showChrome = true
+    @State private var showTools = true
     @State private var showPanel = false
     @State private var sheetTab = 0
 
@@ -49,10 +49,13 @@ struct ContentView: View {
 
             chrome
         }
+        .overlay(alignment: .bottomLeading) {
+            toggleButton
+        }
         .contentShape(Rectangle())
         .onTapGesture {
-            withAnimation(.easeInOut(duration: 0.18)) {
-                showChrome.toggle()
+            withAnimation(.easeInOut(duration: 0.2)) {
+                showTools.toggle()
             }
         }
         .statusBarHidden(true)
@@ -67,7 +70,6 @@ struct ContentView: View {
         }
         .onAppear {
             UIApplication.shared.isIdleTimerDisabled = true
-            // 启动即按设置里的方向锁定，默认横屏
             let lock = OrientationLock(rawValue: orientationLockRaw) ?? .landscape
             applyOrientationLock(lock)
             capture.start()
@@ -83,50 +85,74 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - 界面元素
+    // MARK: - 左下角圆形开关
+
+    private var toggleButton: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                showTools.toggle()
+            }
+        } label: {
+            Image(systemName: showTools ? "chevron.down" : "square.grid.2x2")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.92))
+                .frame(width: 52, height: 52)
+                .background(.ultraThinMaterial, in: Circle())
+                .overlay(Circle().stroke(Color.white.opacity(0.16), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .padding(.leading, 22)
+        .padding(.bottom, 22)
+    }
+
+    // MARK: - 顶部状态条与底部工具条
 
     private var chrome: some View {
         VStack(spacing: 0) {
-            HStack {
-                statusCapsule
-                Spacer(minLength: 0)
+            if showTools {
+                HStack {
+                    statusCapsule
+                    Spacer(minLength: 0)
+                }
             }
+
             Spacer(minLength: 0)
-            HStack(spacing: 8) {
-                toolButton("slider.horizontal.3", "输入") {
-                    sheetTab = 0
-                    showPanel = true
+
+            if showTools {
+                HStack(spacing: 8) {
+                    toolButton("slider.horizontal.3", "输入") {
+                        sheetTab = 0
+                        showPanel = true
+                    }
+                    toolButton("rectangle.on.rectangle", "画面") {
+                        sheetTab = 1
+                        showPanel = true
+                    }
+                    toolButton("arrow.left.arrow.right", "左右镜像", active: mirrorH) {
+                        mirrorH.toggle()
+                    }
+                    toolButton("arrow.up.arrow.down", "上下镜像", active: mirrorV) {
+                        mirrorV.toggle()
+                    }
+                    toolButton("speedometer", "性能") {
+                        sheetTab = 2
+                        showPanel = true
+                    }
+                    toolButton("arrow.counterclockwise", "复位") {
+                        mirrorH = false
+                        mirrorV = false
+                        viewport.reset()
+                    }
                 }
-                toolButton("rectangle.on.rectangle", "画面") {
-                    sheetTab = 1
-                    showPanel = true
-                }
-                toolButton("arrow.left.arrow.right", "左右镜像", active: mirrorH) {
-                    mirrorH.toggle()
-                }
-                toolButton("arrow.up.arrow.down", "上下镜像", active: mirrorV) {
-                    mirrorV.toggle()
-                }
-                toolButton("speedometer", "性能") {
-                    sheetTab = 2
-                    showPanel = true
-                }
-                toolButton("arrow.counterclockwise", "复位") {
-                    mirrorH = false
-                    mirrorV = false
-                    viewport.reset()
-                }
+                .padding(.bottom, 18)
             }
         }
         .padding(.horizontal, 18)
         .padding(.top, 12)
-        .padding(.bottom, 18)
-        .opacity(showChrome ? 1 : 0)
-        .animation(.easeInOut(duration: 0.2), value: showChrome)
     }
 
     private var statusCapsule: some View {
-        HStack(spacing: 9) {
+        HStack(spacing: 10) {
             Circle()
                 .fill(capture.formats.isEmpty ? Color.orange : Color.green)
                 .frame(width: 7, height: 7)
@@ -135,7 +161,11 @@ struct ContentView: View {
                 .font(.system(size: 12, weight: .medium, design: .monospaced))
                 .lineLimit(1)
 
-            Text("屏幕 \(capture.displayHz)Hz")
+            Text("实际 \(Int(capture.measuredFPS.rounded()))fps")
+                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.85))
+
+            Text("屏 \(capture.displayHz)Hz")
                 .font(.system(size: 12, weight: .regular, design: .monospaced))
                 .foregroundStyle(.white.opacity(0.55))
         }

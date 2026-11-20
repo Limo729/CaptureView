@@ -140,8 +140,11 @@ final class PreviewCanvasView: UIView {
         let size = layerSize()
         canvasLayer.bounds = CGRect(origin: .zero, size: size)
         canvasLayer.position = CGPoint(x: bounds.midX, y: bounds.midY)
+
+        // 预览层是 canvasLayer 的子层，它的 position 用的是父层坐标系，
+        // 必须按 canvasLayer 自己的尺寸算中心，不能再用屏幕中心
         previewLayer.bounds = CGRect(origin: .zero, size: size)
-        previewLayer.position = CGPoint(x: bounds.midX, y: bounds.midY)
+        previewLayer.position = CGPoint(x: size.width / 2, y: size.height / 2)
         CATransaction.commit()
         applyTransform()
     }

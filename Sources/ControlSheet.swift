@@ -205,16 +205,17 @@ struct ControlSheet: View {
             Section("当前状态") {
                 LabeledContent("采集格式", value: capture.currentText)
                 LabeledContent("设备", value: capture.deviceName)
+                LabeledContent("实测帧率", value: "\(Int(capture.measuredFPS.rounded())) fps")
                 LabeledContent("屏幕刷新", value: "\(capture.displayHz) Hz")
-                LabeledContent("格式上限", value: "\(Int(capture.maxFPS)) fps")
+                LabeledContent("设备声明上限", value: "\(Int(capture.maxFPS)) fps")
                 LabeledContent("设定帧率", value: "\(Int(capture.selectedFPS)) fps")
             }
 
             Section {
-                Text("“屏幕刷新”显示 60Hz，说明 ProMotion 没被 App 拿到，跟采集卡无关；显示 120Hz 才说明高刷生效。")
+                Text("“实测帧率”是真正到达的画面帧数，以这个为准。很多 UVC 采集卡在描述符里把上限写得比实际高，所以“设备声明上限”只是卡自己报的数。")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
-                Text("如果采集格式写着 120fps、屏幕却只有 60Hz，那就是渲染链路的问题，而不是卡的问题。")
+                Text("“屏幕刷新”显示 60Hz，说明 ProMotion 没被 App 拿到，跟采集卡无关；显示 120Hz 才说明高刷生效。")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
